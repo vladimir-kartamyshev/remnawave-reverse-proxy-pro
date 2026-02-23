@@ -4,7 +4,7 @@ SCRIPT_VERSION="2.3.4"
 UPDATE_AVAILABLE=false
 DIR_REMNAWAVE="/usr/local/remnawave_reverse/"
 LANG_FILE="${DIR_REMNAWAVE}selected_language"
-SCRIPT_URL="https://raw.githubusercontent.com/eGamesAPI/remnawave-reverse-proxy/refs/heads/main/install_remnawave.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/vladimir-kartamyshev/remnawave-reverse-proxy-pro/refs/heads/main/install_remnawave.sh"
 
 COLOR_RESET="\033[0m"
 COLOR_GREEN="\033[1;32m"
@@ -141,8 +141,29 @@ set_language() {
                 [PRESS_ENTER_RETURN_MENU]="Press Enter to return to the menu..."
                 [REMNAWAVE_CLI]="Remnawave CLI"
                 [ACCESS_PANEL]="Access panel via port 8443 (Only for panel + node)"
-                [MANAGE_PANEL_NODE_PROMPT]="Select action (0-6):"
-                [MANAGE_PANEL_NODE_INVALID_CHOICE]="Invalid choice. Please select 0-6."
+                [CASCADE_SETUP]="Configure 2-node cascade (automatic)"
+                [MANAGE_PANEL_NODE_PROMPT]="Select action (0-7):"
+                [MANAGE_PANEL_NODE_INVALID_CHOICE]="Invalid choice. Please select 0-7."
+                [CASCADE_CONFIRM]="This option will update 2 selected node profiles, create service user/squad, and restart both nodes. Continue? (y/n): "
+                [CASCADE_START]="Starting cascade configuration..."
+                [CASCADE_NODES_NOT_FOUND]="Unable to find enough nodes in panel."
+                [CASCADE_MISSING_PROFILE]="Selected node has no active config profile/inbound."
+                [CASCADE_TOKEN_ERROR]="Unable to get valid panel token."
+                [CASCADE_SQUAD_READY]="Bridge squad is ready"
+                [CASCADE_USER_READY]="Service user is ready"
+                [CASCADE_KEYS_READY]="Reality keys generated"
+                [CASCADE_SECOND_PROFILE_UPDATED]="Second node profile updated"
+                [CASCADE_FIRST_PROFILE_UPDATED]="First node profile updated"
+                [CASCADE_NODES_RESTARTED]="Selected nodes restarted"
+                [CASCADE_DONE]="Cascade configured successfully"
+                [CASCADE_VALIDATE]="Update client subscription and connect to FIRST node host. Egress IP should match SECOND node."
+                [CASCADE_ERROR]="Cascade setup failed"
+                [CASCADE_SELECT_FIRST_NODE]="Enter 1st node name for cascade (entry node):"
+                [CASCADE_SELECT_SECOND_NODE]="Enter 2nd node name for cascade (egress node):"
+                [CASCADE_NODE_NOT_FOUND]="Node with specified name not found"
+                [CASCADE_SAME_NODE_ERROR]="First and second node must be different"
+                [CASCADE_NODES_LIST]="Available nodes:"
+                [CASCADE_CHAIN_ID]="Chain suffix"
                 #Manage Certificates
                 [CERT_UPDATE]="Update current certificates"
                 [CERT_GENERATE]="Generate new certificates for another domain"
@@ -555,8 +576,29 @@ set_language() {
                 [PRESS_ENTER_RETURN_MENU]="Нажмите Enter для возврата в меню..."
                 [REMNAWAVE_CLI]="Remnawave CLI"
                 [ACCESS_PANEL]="Доступ к панели через порт 8443 (только для панели + ноды)"
-                [MANAGE_PANEL_NODE_PROMPT]="Выберите действие (0-6):"
-                [MANAGE_PANEL_NODE_INVALID_CHOICE]="Неверный выбор. Выберите 0-6."
+                [CASCADE_SETUP]="Настроить каскад из 2 нод (авто)"
+                [MANAGE_PANEL_NODE_PROMPT]="Выберите действие (0-7):"
+                [MANAGE_PANEL_NODE_INVALID_CHOICE]="Неверный выбор. Выберите 0-7."
+                [CASCADE_CONFIRM]="Опция обновит профили 2 выбранных нод, создаст service user/squad и перезапустит обе ноды. Продолжить? (y/n): "
+                [CASCADE_START]="Запуск настройки каскада..."
+                [CASCADE_NODES_NOT_FOUND]="Недостаточно нод в панели."
+                [CASCADE_MISSING_PROFILE]="У выбранной ноды отсутствует активный профиль или inbound."
+                [CASCADE_TOKEN_ERROR]="Не удалось получить валидный токен панели."
+                [CASCADE_SQUAD_READY]="Bridge-squad готов"
+                [CASCADE_USER_READY]="Service user готов"
+                [CASCADE_KEYS_READY]="Reality-ключи сгенерированы"
+                [CASCADE_SECOND_PROFILE_UPDATED]="Профиль 2-й ноды обновлен"
+                [CASCADE_FIRST_PROFILE_UPDATED]="Профиль 1-й ноды обновлен"
+                [CASCADE_NODES_RESTARTED]="Выбранные ноды перезапущены"
+                [CASCADE_DONE]="Каскад успешно настроен"
+                [CASCADE_VALIDATE]="Обновите подписку в клиенте и подключайтесь к host 1-й ноды. Egress IP должен соответствовать 2-й ноде."
+                [CASCADE_ERROR]="Ошибка настройки каскада"
+                [CASCADE_SELECT_FIRST_NODE]="Укажите имя 1-й ноды для каскадного подключения (входная):"
+                [CASCADE_SELECT_SECOND_NODE]="Укажите имя 2-й ноды для каскадного подключения (выходная):"
+                [CASCADE_NODE_NOT_FOUND]="Нода с указанным именем не найдена"
+                [CASCADE_SAME_NODE_ERROR]="1-я и 2-я нода должны быть разными"
+                [CASCADE_NODES_LIST]="Доступные ноды:"
+                [CASCADE_CHAIN_ID]="Суффикс цепочки"
                 #Manage Certificates
                 [CERT_UPDATE]="Обновить текущие сертификаты"
                 [CERT_GENERATE]="Сгенерировать новые сертификаты для другого домена"
@@ -1547,6 +1589,291 @@ view_logs() {
 }
 #Manage Panel Access
 
+#Configure 2-node Cascade
+setup_ru_us_cascade() {
+    local domain_url="127.0.0.1:3000"
+    local token=""
+
+    echo -e "${COLOR_YELLOW}${LANG[CASCADE_CONFIRM]}${COLOR_RESET}"
+    read confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo -e "${COLOR_YELLOW}${LANG[EXIT]}${COLOR_RESET}"
+        return 0
+    fi
+
+    echo -e "${COLOR_YELLOW}${LANG[CASCADE_START]}${COLOR_RESET}"
+    get_panel_token || {
+        echo -e "${COLOR_RED}${LANG[CASCADE_TOKEN_ERROR]}${COLOR_RESET}"
+        return 1
+    }
+    token=$(cat "$TOKEN_FILE")
+
+    local nodes_response nodes_active
+    nodes_response=$(make_api_request "GET" "http://$domain_url/api/nodes" "$token")
+    if [ -z "$nodes_response" ] || ! echo "$nodes_response" | jq -e '.response | type == "array"' > /dev/null 2>&1; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: nodes response is invalid${COLOR_RESET}"
+        return 1
+    fi
+    nodes_active=$(echo "$nodes_response" | jq -c '{response:[.response[] | select(.isDisabled != true)]}')
+
+    local nodes_total
+    nodes_total=$(echo "$nodes_active" | jq -r '.response | length')
+    if [ -z "$nodes_total" ] || [ "$nodes_total" -lt 2 ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_NODES_NOT_FOUND]}${COLOR_RESET}"
+        return 1
+    fi
+
+    echo -e "${COLOR_YELLOW}${LANG[CASCADE_NODES_LIST]}${COLOR_RESET}"
+    echo "$nodes_active" | jq -r '.response[] | "- \(.name) [\(.address)]"'
+
+    local first_node_name second_node_name
+    reading "${LANG[CASCADE_SELECT_FIRST_NODE]}" first_node_name
+    reading "${LANG[CASCADE_SELECT_SECOND_NODE]}" second_node_name
+
+    if [ -z "$first_node_name" ] || [ -z "$second_node_name" ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_NODE_NOT_FOUND]}${COLOR_RESET}"
+        return 1
+    fi
+
+    if [ "$first_node_name" = "$second_node_name" ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_SAME_NODE_ERROR]}${COLOR_RESET}"
+        return 1
+    fi
+
+    local first_node_uuid second_node_uuid first_name second_name first_address second_address
+    local first_profile_uuid second_profile_uuid first_inbound_uuid second_inbound_uuid first_inbound_tag second_inbound_tag
+
+    first_node_uuid=$(echo "$nodes_active" | jq -r --arg name "$first_node_name" '.response[] | select(.name == $name) | .uuid' | head -n1)
+    second_node_uuid=$(echo "$nodes_active" | jq -r --arg name "$second_node_name" '.response[] | select(.name == $name) | .uuid' | head -n1)
+    first_name=$(echo "$nodes_active" | jq -r --arg name "$first_node_name" '.response[] | select(.name == $name) | .name' | head -n1)
+    second_name=$(echo "$nodes_active" | jq -r --arg name "$second_node_name" '.response[] | select(.name == $name) | .name' | head -n1)
+    first_address=$(echo "$nodes_active" | jq -r --arg name "$first_node_name" '.response[] | select(.name == $name) | .address' | head -n1)
+    second_address=$(echo "$nodes_active" | jq -r --arg name "$second_node_name" '.response[] | select(.name == $name) | .address' | head -n1)
+    first_profile_uuid=$(echo "$nodes_active" | jq -r --arg name "$first_node_name" '.response[] | select(.name == $name) | .configProfile.activeConfigProfileUuid' | head -n1)
+    second_profile_uuid=$(echo "$nodes_active" | jq -r --arg name "$second_node_name" '.response[] | select(.name == $name) | .configProfile.activeConfigProfileUuid' | head -n1)
+    first_inbound_uuid=$(echo "$nodes_active" | jq -r --arg name "$first_node_name" '.response[] | select(.name == $name) | .configProfile.activeInbounds[0].uuid' | head -n1)
+    second_inbound_uuid=$(echo "$nodes_active" | jq -r --arg name "$second_node_name" '.response[] | select(.name == $name) | .configProfile.activeInbounds[0].uuid' | head -n1)
+    first_inbound_tag=$(echo "$nodes_active" | jq -r --arg name "$first_node_name" '.response[] | select(.name == $name) | .configProfile.activeInbounds[0].tag' | head -n1)
+    second_inbound_tag=$(echo "$nodes_active" | jq -r --arg name "$second_node_name" '.response[] | select(.name == $name) | .configProfile.activeInbounds[0].tag' | head -n1)
+
+    if [ -z "$first_node_uuid" ] || [ "$first_node_uuid" = "null" ] || \
+       [ -z "$second_node_uuid" ] || [ "$second_node_uuid" = "null" ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_NODE_NOT_FOUND]}${COLOR_RESET}"
+        return 1
+    fi
+
+    if [ -z "$first_profile_uuid" ] || [ "$first_profile_uuid" = "null" ] || \
+       [ -z "$second_profile_uuid" ] || [ "$second_profile_uuid" = "null" ] || \
+       [ -z "$first_inbound_uuid" ] || [ "$first_inbound_uuid" = "null" ] || \
+       [ -z "$second_inbound_uuid" ] || [ "$second_inbound_uuid" = "null" ] || \
+       [ -z "$first_inbound_tag" ] || [ "$first_inbound_tag" = "null" ] || \
+       [ -z "$second_inbound_tag" ] || [ "$second_inbound_tag" = "null" ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_MISSING_PROFILE]}${COLOR_RESET}"
+        return 1
+    fi
+
+    local raw_suffix chain_suffix suffix_hash suffix_short suffix_lc
+    raw_suffix="${first_name}_${second_name}"
+    chain_suffix=$(echo "$raw_suffix" | tr '[:lower:]' '[:upper:]' | sed -E 's/[^A-Z0-9]+/_/g; s/^_+//; s/_+$//; s/_{2,}/_/g')
+    if [ -z "$chain_suffix" ]; then
+        chain_suffix="CHAIN"
+    fi
+    suffix_hash=$(printf '%s' "$chain_suffix" | shasum | awk '{print substr($1,1,6)}')
+    suffix_short=$(echo "$chain_suffix" | cut -c1-12)
+    chain_suffix="${suffix_short}_${suffix_hash}"
+    suffix_lc=$(echo "$chain_suffix" | tr '[:upper:]' '[:lower:]')
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_CHAIN_ID]}: ${chain_suffix}${COLOR_RESET}"
+
+    local squad_name service_username outbound_tag
+    squad_name="SQ-BR-${chain_suffix}"
+    service_username="svc_br_${suffix_lc}"
+    outbound_tag="OUT-${chain_suffix}-CASCADE"
+
+    local squads_response squad_uuid squad_payload squad_update_payload
+    squads_response=$(make_api_request "GET" "http://$domain_url/api/internal-squads" "$token")
+    if [ -z "$squads_response" ] || ! echo "$squads_response" | jq -e '.response.internalSquads | type == "array"' > /dev/null 2>&1; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: squads response is invalid${COLOR_RESET}"
+        return 1
+    fi
+
+    squad_uuid=$(echo "$squads_response" | jq -r --arg name "$squad_name" '.response.internalSquads[] | select(.name == $name) | .uuid' | head -n1)
+
+    if [ -z "$squad_uuid" ] || [ "$squad_uuid" = "null" ]; then
+        squad_payload=$(jq -n --arg name "$squad_name" --arg inbound "$second_inbound_uuid" '{name: $name, inbounds: [$inbound]}')
+        local squad_create_response
+        squad_create_response=$(make_api_request "POST" "http://$domain_url/api/internal-squads" "$token" "$squad_payload")
+        squad_uuid=$(echo "$squad_create_response" | jq -r '.response.uuid')
+        if [ -z "$squad_uuid" ] || [ "$squad_uuid" = "null" ]; then
+            echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to create bridge squad${COLOR_RESET}"
+            return 1
+        fi
+    else
+        local squad_inbounds
+        squad_inbounds=$(echo "$squads_response" | jq -c --arg uuid "$squad_uuid" '.response.internalSquads[] | select(.uuid == $uuid) | [.inbounds[].uuid]')
+        local updated_inbounds
+        updated_inbounds=$(jq -n --argjson existing "$squad_inbounds" --arg inbound "$second_inbound_uuid" '$existing + [$inbound] | unique')
+        squad_update_payload=$(jq -n --arg uuid "$squad_uuid" --argjson inbounds "$updated_inbounds" '{uuid: $uuid, inbounds: $inbounds}')
+        local squad_patch_response
+        squad_patch_response=$(make_api_request "PATCH" "http://$domain_url/api/internal-squads" "$token" "$squad_update_payload")
+        if ! echo "$squad_patch_response" | jq -e '.response.uuid' > /dev/null 2>&1; then
+            echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to update bridge squad${COLOR_RESET}"
+            return 1
+        fi
+    fi
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_SQUAD_READY]}: $squad_uuid${COLOR_RESET}"
+
+    local users_response svc_user_uuid svc_vless_uuid user_payload user_update_payload
+    users_response=$(make_api_request "GET" "http://$domain_url/api/users" "$token")
+    if [ -z "$users_response" ] || ! echo "$users_response" | jq -e '.response.users | type == "array"' > /dev/null 2>&1; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: users response is invalid${COLOR_RESET}"
+        return 1
+    fi
+
+    svc_user_uuid=$(echo "$users_response" | jq -r --arg user "$service_username" '.response.users[] | select(.username == $user) | .uuid' | head -n1)
+    svc_vless_uuid=$(echo "$users_response" | jq -r --arg user "$service_username" '.response.users[] | select(.username == $user) | .vlessUuid' | head -n1)
+
+    if [ -z "$svc_user_uuid" ] || [ "$svc_user_uuid" = "null" ]; then
+        user_payload=$(jq -n \
+            --arg username "$service_username" \
+            --arg expireAt "2099-12-31T23:59:59.000Z" \
+            --arg squad "$squad_uuid" \
+            '{username: $username, status: "ACTIVE", trafficLimitBytes: 0, trafficLimitStrategy: "NO_RESET", expireAt: $expireAt, activeInternalSquads: [$squad]}')
+        local user_create_response
+        user_create_response=$(make_api_request "POST" "http://$domain_url/api/users" "$token" "$user_payload")
+        svc_user_uuid=$(echo "$user_create_response" | jq -r '.response.uuid')
+        svc_vless_uuid=$(echo "$user_create_response" | jq -r '.response.vlessUuid')
+        if [ -z "$svc_user_uuid" ] || [ "$svc_user_uuid" = "null" ] || [ -z "$svc_vless_uuid" ] || [ "$svc_vless_uuid" = "null" ]; then
+            echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to create service user${COLOR_RESET}"
+            return 1
+        fi
+    else
+        user_update_payload=$(jq -n --arg uuid "$svc_user_uuid" --arg squad "$squad_uuid" '{uuid: $uuid, activeInternalSquads: [$squad]}')
+        local user_patch_response
+        user_patch_response=$(make_api_request "PATCH" "http://$domain_url/api/users" "$token" "$user_update_payload")
+        if ! echo "$user_patch_response" | jq -e '.response.uuid' > /dev/null 2>&1; then
+            echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to update service user${COLOR_RESET}"
+            return 1
+        fi
+    fi
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_USER_READY]}: ${service_username}${COLOR_RESET}"
+
+    local keys_response us_private_key us_public_key short_id
+    keys_response=$(make_api_request "GET" "http://$domain_url/api/system/tools/x25519/generate" "$token")
+    us_private_key=$(echo "$keys_response" | jq -r '.response.keypairs[0].privateKey')
+    us_public_key=$(echo "$keys_response" | jq -r '.response.keypairs[0].publicKey')
+    short_id=$(openssl rand -hex 8)
+    if [ -z "$us_private_key" ] || [ "$us_private_key" = "null" ] || [ -z "$us_public_key" ] || [ "$us_public_key" = "null" ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to generate reality keypair${COLOR_RESET}"
+        return 1
+    fi
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_KEYS_READY]}${COLOR_RESET}"
+
+    local second_profile_response second_config second_config_updated second_patch_payload second_patch_response
+    second_profile_response=$(make_api_request "GET" "http://$domain_url/api/config-profiles/$second_profile_uuid" "$token")
+    second_config=$(echo "$second_profile_response" | jq -c '.response.config')
+    if [ -z "$second_config" ] || [ "$second_config" = "null" ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to load second profile config${COLOR_RESET}"
+        return 1
+    fi
+
+    second_config_updated=$(echo "$second_config" | jq --arg tag "$second_inbound_tag" --arg privateKey "$us_private_key" --arg shortId "$short_id" --arg serverName "$second_address" '
+        .inbounds |= map(
+            if .tag == $tag then
+                .streamSettings.network = "tcp"
+                | .streamSettings.security = "reality"
+                | (.streamSettings.realitySettings //= {})
+                | .streamSettings.realitySettings.privateKey = $privateKey
+                | .streamSettings.realitySettings.shortIds = [$shortId]
+                | .streamSettings.realitySettings.serverNames = [$serverName]
+                | .streamSettings.realitySettings.show = false
+                | .streamSettings.realitySettings.xver = (.streamSettings.realitySettings.xver // 1)
+                | .streamSettings.realitySettings.spiderX = (.streamSettings.realitySettings.spiderX // "")
+            else . end
+        )
+    ')
+    second_patch_payload=$(jq -n --arg uuid "$second_profile_uuid" --argjson config "$second_config_updated" '{uuid: $uuid, config: $config}')
+    second_patch_response=$(make_api_request "PATCH" "http://$domain_url/api/config-profiles" "$token" "$second_patch_payload")
+    if ! echo "$second_patch_response" | jq -e '.response.uuid' > /dev/null 2>&1; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to update second profile${COLOR_RESET}"
+        return 1
+    fi
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_SECOND_PROFILE_UPDATED]}: $second_name${COLOR_RESET}"
+
+    local first_profile_response first_config first_config_updated first_patch_payload first_patch_response
+    first_profile_response=$(make_api_request "GET" "http://$domain_url/api/config-profiles/$first_profile_uuid" "$token")
+    first_config=$(echo "$first_profile_response" | jq -c '.response.config')
+    if [ -z "$first_config" ] || [ "$first_config" = "null" ]; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to load first profile config${COLOR_RESET}"
+        return 1
+    fi
+
+    first_config_updated=$(echo "$first_config" | jq --arg svcUuid "$svc_vless_uuid" --arg secondAddr "$second_address" --arg shortId "$short_id" --arg secondPublicKey "$us_public_key" --arg firstTag "$first_inbound_tag" --arg outboundTag "$outbound_tag" '
+        (.outbounds //= [])
+        | (.routing //= {})
+        | (.routing.rules //= [])
+        | .outbounds = (
+            [.outbounds[] | select(.tag != $outboundTag)] + [
+                {
+                    "tag": $outboundTag,
+                    "protocol": "vless",
+                    "settings": {
+                        "vnext": [
+                            {
+                                "address": $secondAddr,
+                                "port": 443,
+                                "users": [
+                                    {
+                                        "id": $svcUuid,
+                                        "encryption": "none",
+                                        "flow": "xtls-rprx-vision"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "streamSettings": {
+                        "network": "tcp",
+                        "security": "reality",
+                        "realitySettings": {
+                            "serverName": $secondAddr,
+                            "fingerprint": "chrome",
+                            "password": $secondPublicKey,
+                            "shortId": $shortId,
+                            "spiderX": ""
+                        }
+                    }
+                }
+            ]
+        )
+        | .routing.rules = (
+            [{"type": "field", "inboundTag": [$firstTag], "outboundTag": $outboundTag}]
+            + [.routing.rules[] | select(.outboundTag != $outboundTag)]
+        )
+    ')
+    first_patch_payload=$(jq -n --arg uuid "$first_profile_uuid" --argjson config "$first_config_updated" '{uuid: $uuid, config: $config}')
+    first_patch_response=$(make_api_request "PATCH" "http://$domain_url/api/config-profiles" "$token" "$first_patch_payload")
+    if ! echo "$first_patch_response" | jq -e '.response.uuid' > /dev/null 2>&1; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to update first profile${COLOR_RESET}"
+        return 1
+    fi
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_FIRST_PROFILE_UPDATED]}: $first_name${COLOR_RESET}"
+
+    local restart_second_response restart_first_response
+    restart_second_response=$(make_api_request "POST" "http://$domain_url/api/nodes/$second_node_uuid/actions/restart" "$token" "{}")
+    restart_first_response=$(make_api_request "POST" "http://$domain_url/api/nodes/$first_node_uuid/actions/restart" "$token" "{}")
+    if ! echo "$restart_second_response" | jq -e '.response.eventSent == true' > /dev/null 2>&1 || \
+       ! echo "$restart_first_response" | jq -e '.response.eventSent == true' > /dev/null 2>&1; then
+        echo -e "${COLOR_RED}${LANG[CASCADE_ERROR]}: failed to restart selected nodes${COLOR_RESET}"
+        return 1
+    fi
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_NODES_RESTARTED]}${COLOR_RESET}"
+
+    echo -e "${COLOR_GREEN}${LANG[CASCADE_DONE]}${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}${LANG[CASCADE_VALIDATE]}${COLOR_RESET}"
+    return 0
+}
+#Configure 2-node Cascade
+
 #Show Reinstall Options
 show_reinstall_options() {
     echo -e ""
@@ -1617,6 +1944,7 @@ show_panel_node_menu() {
     echo -e "${COLOR_YELLOW}4. ${LANG[VIEW_LOGS]}${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}5. ${LANG[REMNAWAVE_CLI]}${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}6. ${LANG[ACCESS_PANEL]}${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}7. ${LANG[CASCADE_SETUP]}${COLOR_RESET}"
     echo -e ""
     echo -e "${COLOR_YELLOW}0. ${LANG[EXIT]}${COLOR_RESET}"
     echo -e ""
@@ -1655,6 +1983,12 @@ show_panel_node_menu() {
             ;;
         6)
             manage_panel_access
+            sleep 2
+            log_clear
+            show_panel_node_menu
+            ;;
+        7)
+            setup_ru_us_cascade
             sleep 2
             log_clear
             show_panel_node_menu
